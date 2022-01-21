@@ -135,6 +135,11 @@ and make progress.
 2. Secondly, environment variables defined in steps can be easily overwritten by the ones from `PipelineRun` and `TaskRun`.
   With that, common settings like API keys, connection details, ... can be optionally overwritten in a single place.
 
+3. Additionally, environment variables "injection" may be useful in case of relatively generic tasks. 
+   The example could be a build or deployment task, which executes code from user's repository
+   (and thus, may depend on custom environment variables). You may think about `make`, `golang-test`, `ansible`, ... 
+   Without the possibility to provide environment variables in runtime it would be harder to deliver such a generic task, 
+   and users would be forced to write specific tasks per each use case separately.
 
 ## Requirements
 
@@ -160,6 +165,15 @@ spec:
       valueFrom:
         fieldRef:
           fieldPath: metadata.labels['tekton.dev/pipelineRun']
+  pipelineSpec:
+    tasks:
+    - name: make
+      taskSpec:
+        spec:
+          useRuntimeEnv: true
+          env:
+          - name:  TASK_VAR
+            value: a value
 ```
 
 Environment variables defined in steps can be easily overwritten by the ones from a `TaskRun`, e.g.:
@@ -171,14 +185,15 @@ metadata:
   name: mytask
   namespace: default
 spec:
+  useRuntimeEnv: true
   steps:
-    - name: echo-msg
-      image: ubuntu
-      command: ["bash", "-c"]
-      args: ["echo $MSG"]
-      envs:
-      - name: "MSG"
-        value: "Default message"
+  - name: echo-msg
+    image: ubuntu
+    command: ["bash", "-c"]
+    args: ["echo $MSG"]
+    env:
+    - name: "MSG"
+      value: "Default message"
 ---
 apiVersion: tekton.dev/v1beta1
 kind: TaskRun
@@ -189,10 +204,12 @@ spec:
   taskRef:
     name: mytask
   podTemplate:
-    envs:
-      - name: "MSG"
-        value: "Overwritten message"
+    env:
+    - name: "MSG"
+      value: "Overwritten message"
 ```
+
+The flag `useRuntimeEnv` allow to opt-in for 
 
 ### Notes/Caveats (optional)
 
@@ -230,7 +247,8 @@ Consider including folks that also work on CLI and dashboard.
 
 ### Performance (optional)
 
-No performance implications.
+No performance implications assuming that `TaskRun` does not contain inlined `taskSpec` with all resolved variables
+(see [discussion](https://github.com/tektoncd/pipeline/issues/1606#issuecomment-561593839)).
 
 ## Design Details
 
